@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # NL-to-pandas Fine-tuning
 
 Fine-tune a small open code model to translate natural-language questions about tabular data into pandas code, then compare it rigorously with prompting baselines. The portfolio story is AI for developer and data tooling: predict, retrieve and reason, then generate and verify.
@@ -34,3 +35,7 @@ Generated tables, verified pairs, and generation reports are git-ignored under `
 Install local experiment tracking tools with `python -m pip install -e ".[tracking]"` when training and evaluation are ready.
 
 See [the design brief](docs/design.md) for success criteria, scope, and risks.
+=======
+# pandas-pilot
+Fine-tuned Qwen2.5-Coder (QLoRA) that turns questions into sandboxed pandas code. CI-gated, quantized, deployed.
+>>>>>>> origin/main
