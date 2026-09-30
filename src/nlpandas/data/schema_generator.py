@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import random
 from dataclasses import asdict, dataclass
@@ -12,14 +13,23 @@ from typing import Any
 import pandas as pd
 from faker import Faker
 
-DOMAIN_COLUMNS: dict[str, tuple[str, ...]] = {
-    "sales": ("customer", "product", "region", "quantity", "amount", "event_date", "status"),
-    "hr": ("employee", "department", "role", "salary", "region", "event_date", "status"),
-    "logs": ("service", "level", "message", "response_ms", "region", "event_date", "status"),
-    "finance": ("account", "transaction", "amount", "currency", "region", "event_date", "status"),
-    "education": ("student", "course", "score", "instructor", "region", "event_date", "status"),
+DOMAIN_NUMERIC_COLUMNS: dict[str, tuple[str, ...]] = {
+    "sales": ("quantity", "amount", "unit_price", "discount"),
+    "hr": ("salary", "bonus", "tenure_years", "performance_score"),
+    "logs": ("response_ms", "retry_count", "status_code", "payload_bytes"),
+    "finance": ("amount", "balance", "fee", "exchange_rate"),
+    "education": ("score", "credits", "attendance", "study_hours"),
 }
-DOMAINS = tuple(DOMAIN_COLUMNS)
+DOMAIN_TEXT_COLUMNS: dict[str, tuple[str, ...]] = {
+    "sales": ("customer", "product", "channel", "campaign", "sales_rep", "segment"),
+    "hr": ("employee", "department", "role", "manager", "location", "employment_type"),
+    "logs": ("service", "level", "message", "host", "endpoint", "environment"),
+    "finance": ("account", "transaction", "currency", "category", "merchant", "portfolio"),
+    "education": ("student", "course", "instructor", "program", "grade_level", "term"),
+}
+DOMAINS = tuple(DOMAIN_NUMERIC_COLUMNS)
+COMMON_COLUMNS = ("region", "status", "event_date")
+NUMERIC_COLUMNS = {column for columns in DOMAIN_NUMERIC_COLUMNS.values() for column in columns}
 REGIONS = ("north", "south", "east", "west", "central")
 STATUSES = ("new", "active", "pending", "closed", "cancelled")
 
@@ -54,25 +64,71 @@ def assign_splits(schema_count: int, seed: int = 42) -> list[str]:
     return splits
 
 
+def _columns_for_schema(domain: str, variant_index: int, seed: int) -> tuple[str, ...]:
+    layouts = list(
+        itertools.product(
+            itertools.combinations(DOMAIN_NUMERIC_COLUMNS[domain], 2),
+            itertools.combinations(DOMAIN_TEXT_COLUMNS[domain], 2),
+        )
+    )
+    domain_seed = seed + DOMAINS.index(domain) * 10_007
+    random.Random(domain_seed).shuffle(layouts)
+    numeric_columns, text_columns = layouts[variant_index % len(layouts)]
+    return ("record_id", *COMMON_COLUMNS, *numeric_columns, *text_columns)
+
+
 def _value_for(column: str, fake: Faker, rng: random.Random) -> Any:
-    if column in {"customer", "employee", "instructor", "student"}:
+    if column in {
+        "customer",
+        "employee",
+        "instructor",
+        "manager",
+        "sales_rep",
+        "student",
+    }:
         return fake.name()
-    if column in {"product", "course", "service", "account"}:
+    if column in {
+        "account",
+        "campaign",
+        "course",
+        "merchant",
+        "portfolio",
+        "product",
+        "program",
+        "service",
+    }:
         return fake.word().title()
-    if column in {"department", "role", "transaction", "level", "currency"}:
+    if column in {
+        "category",
+        "channel",
+        "currency",
+        "department",
+        "employment_type",
+        "environment",
+        "grade_level",
+        "host",
+        "level",
+        "location",
+        "role",
+        "segment",
+        "term",
+        "transaction",
+    }:
         return fake.word().upper()
-    if column in {"message"}:
+    if column == "message":
         return fake.sentence(nb_words=5)
     if column == "region":
         return rng.choice(REGIONS)
     if column == "status":
         return rng.choice(STATUSES)
-    if column in {"quantity", "response_ms"}:
+    if column in {"quantity", "response_ms", "retry_count", "status_code", "payload_bytes"}:
         return rng.randint(1, 1200)
-    if column == "score":
+    if column in {"score", "performance_score", "attendance", "discount", "exchange_rate"}:
         return round(rng.uniform(35, 100), 1)
-    if column in {"amount", "salary"}:
+    if column in {"amount", "salary", "unit_price", "bonus", "balance", "fee"}:
         return round(rng.uniform(20, 12000), 2)
+    if column in {"tenure_years", "credits", "study_hours"}:
+        return rng.randint(0, 40)
     if column == "event_date":
         return fake.date_between(start_date="-5y", end_date="today").isoformat()
     return fake.word()
@@ -102,11 +158,7 @@ def generate_table(schema: DatasetSchema, rows: int, seed: int = 42) -> pd.DataF
             for row_index in rng.sample(range(rows), min(null_count, rows)):
                 frame.loc[row_index, column] = None
 
-    numeric_column = next(
-        (column for column in ("amount", "salary", "score", "quantity", "response_ms")
-         if column in frame.columns),
-        None,
-    )
+    numeric_column = next((column for column in frame.columns if column in NUMERIC_COLUMNS), None)
     if numeric_column is not None and rows >= 10:
         frame[numeric_column] = frame[numeric_column].astype("object")
         row_index = rng.randrange(rows)
@@ -134,11 +186,13 @@ def generate_dataset(
     schemas: list[DatasetSchema] = []
 
     for index, split in enumerate(splits):
-        domain = DOMAINS[index % len(DOMAINS)]
+        domain_index = index % len(DOMAINS)
+        domain = DOMAINS[domain_index]
+        variant_index = index // len(DOMAINS)
         schema = DatasetSchema(
             schema_id=f"schema_{index:03d}",
             domain=domain,
-            columns=("record_id", *DOMAIN_COLUMNS[domain]),
+            columns=_columns_for_schema(domain, variant_index, seed),
             split=split,
         )
         table = generate_table(schema, rows_per_schema, seed + index)

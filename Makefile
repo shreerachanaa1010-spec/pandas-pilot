@@ -1,7 +1,7 @@
 PROVIDER ?= ollama
 MODEL ?= qwen2.5-coder:7b
 
-.PHONY: install test lint data pairs sandbox-image sandbox-test teacher-pairs
+.PHONY: install test lint data pairs quality-checks sandbox-image sandbox-test teacher-pairs
 
 install:
 	python -m pip install -e ".[dev]"
@@ -17,6 +17,12 @@ data:
 
 pairs: data
 	python -m nlpandas.data.pair_generator --input data/raw --output data/processed/pairs.jsonl
+
+quality-checks: pairs
+	python -m nlpandas.data.quality_checks --input data/processed/pairs.jsonl --output data/processed/curated_pairs.jsonl
+
+quality-checks: pairs
+	python -m nlpandas.data.quality_checks --input data/processed/pairs.jsonl --output data/processed/curated_pairs.jsonl
 
 sandbox-image:
 	docker build -f docker/Dockerfile.sandbox -t nl-pandas-sandbox:latest .

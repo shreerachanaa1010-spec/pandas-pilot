@@ -34,6 +34,14 @@ def test_generate_dataset_writes_reproducible_tables_and_manifest(tmp_path) -> N
     }
 
 
+def test_generated_schemas_have_distinct_layouts(tmp_path) -> None:
+    schemas = generate_dataset(tmp_path / "generated", schema_count=50, rows_per_schema=1)
+
+    layouts = {schema.columns for schema in schemas}
+    assert len(layouts) == 50
+    assert all({"record_id", "region", "status", "event_date"} <= set(layout) for layout in layouts)
+
+
 def test_assign_splits_rejects_too_few_schemas() -> None:
     with pytest.raises(ValueError, match="at least 10"):
         assign_splits(9)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -18,14 +19,7 @@ from typing import Any
 
 import pandas as pd
 
-NUMERIC_COLUMNS = ("amount", "salary", "score", "quantity", "response_ms")
-TEXT_COLUMNS: dict[str, tuple[str, ...]] = {
-    "sales": ("customer", "product"),
-    "hr": ("employee", "department", "role"),
-    "logs": ("service", "message", "level"),
-    "finance": ("account", "transaction", "currency"),
-    "education": ("student", "course", "instructor"),
-}
+from nlpandas.data.schema_generator import DOMAIN_NUMERIC_COLUMNS, DOMAIN_TEXT_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -54,7 +48,14 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
     split = schema["split"]
     candidates: list[Candidate] = []
 
-    status_value = frame["status"].dropna().iloc[0]
+    categorical_columns = [
+        column
+        for column in ("region", "status", *DOMAIN_TEXT_COLUMNS[domain])
+        if column in frame.columns and frame[column].notna().any()
+    ]
+    category_rng = random.Random(f"{schema_id}:category_filter")
+    category_column = category_rng.choice(categorical_columns)
+    category_value = frame[category_column].dropna().iloc[0]
     candidates.append(
         Candidate(
             schema_id,
@@ -62,12 +63,18 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
             domain,
             "category_filter",
             "easy",
-            f"Show all rows where status is {_literal(status_value)}.",
-            f"result = df.loc[df['status'].eq({_literal(status_value)})].copy()",
+            f"Show rows where {category_column} is exactly {_literal(category_value)}.",
+            "result = df.loc["
+            f"df[{category_column!r}].eq({_literal(category_value)})"
+            "].copy()",
         )
     )
 
-    numeric_column = next(column for column in NUMERIC_COLUMNS if column in frame.columns)
+    numeric_columns = [
+        column for column in frame.columns if column in DOMAIN_NUMERIC_COLUMNS[domain]
+    ]
+    groupby_column = random.Random(f"{schema_id}:groupby_mean").choice(numeric_columns)
+    top_k_column = random.Random(f"{schema_id}:top_k").choice(numeric_columns)
     candidates.extend(
         [
             Candidate(
@@ -76,10 +83,10 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
                 domain,
                 "groupby_mean",
                 "medium",
-                f"For each region, calculate the mean {numeric_column}, ignoring invalid values.",
+                f"For each region, calculate the mean {groupby_column}, ignoring invalid values.",
                 "\n".join(
                     [
-                        f"numeric = pd.to_numeric(df[{numeric_column!r}], errors='coerce')",
+                        f"numeric = pd.to_numeric(df[{groupby_column!r}], errors='coerce')",
                         "result = numeric.groupby(df['region'], dropna=False).mean()"
                         ".dropna().sort_values(ascending=False).head(5)",
                     ]
@@ -91,10 +98,10 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
                 domain,
                 "top_k",
                 "medium",
-                f"Show the five rows with the highest valid {numeric_column} values.",
+                f"Show the five rows with the highest valid {top_k_column} values.",
                 "\n".join(
                     [
-                        f"numeric = pd.to_numeric(df[{numeric_column!r}], errors='coerce')",
+                        f"numeric = pd.to_numeric(df[{top_k_column!r}], errors='coerce')",
                         "result = df.loc[numeric.nlargest(5).index].copy()",
                     ]
                 ),
@@ -105,7 +112,10 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
     dates = pd.to_datetime(frame["event_date"], errors="coerce")
     valid_years = dates.dropna().dt.year
     if not valid_years.empty:
-        year = int(valid_years.iloc[0])
+        date_rng = random.Random(f"{schema_id}:date_year_filter")
+        selected_date = dates.dropna().iloc[date_rng.randrange(len(valid_years))]
+        year = int(selected_date.year)
+        month = int(selected_date.month)
         candidates.append(
             Candidate(
                 schema_id,
@@ -113,11 +123,13 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
                 domain,
                 "date_year_filter",
                 "medium",
-                f"Show rows from {year}, treating invalid dates as missing.",
+                f"Show rows from month {month} in {year}, treating invalid dates as missing.",
                 "\n".join(
                     [
                         "dates = pd.to_datetime(df['event_date'], errors='coerce')",
-                        f"result = df.loc[dates.dt.year.eq({year})].copy()",
+                        "result = df.loc["
+                        f"dates.dt.year.eq({year}) & dates.dt.month.eq({month})"
+                        "].copy()",
                     ]
                 ),
             )
@@ -129,7 +141,7 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
         if column != "record_id" and frame[column].isna().any()
     ]
     if null_columns:
-        column = null_columns[0]
+        column = random.Random(f"{schema_id}:null_count").choice(null_columns)
         candidates.append(
             Candidate(
                 schema_id,
@@ -143,7 +155,7 @@ def _build_candidates(schema: dict[str, Any], frame: pd.DataFrame) -> list[Candi
         )
 
     text_column = next(
-        (column for column in TEXT_COLUMNS[domain] if column in frame.columns), None
+        (column for column in frame.columns if column in DOMAIN_TEXT_COLUMNS[domain]), None
     )
     if text_column is not None:
         text_values = frame[text_column].dropna()

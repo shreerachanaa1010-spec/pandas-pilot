@@ -1,5 +1,6 @@
-<<<<<<< HEAD
 # NL-to-pandas Fine-tuning
+
+Fine-tuned Qwen2.5-Coder with QLoRA to turn questions into sandboxed pandas code. CI-gated, quantized, and designed for deployment.
 
 Fine-tune a small open code model to translate natural-language questions about tabular data into pandas code, then compare it rigorously with prompting baselines. The portfolio story is AI for developer and data tooling: predict, retrieve and reason, then generate and verify.
 
@@ -8,6 +9,10 @@ Fine-tune a small open code model to translate natural-language questions about 
 Week 1 foundation is in place: 50 reproducible schemas, 300 verified starter pairs, a Docker-backed pandas sandbox, and Gemini/Ollama teacher adapters. Teacher-generated code is prompted only from train schemas and is accepted only after two matching sandbox results. Live teacher/container execution is unverified here because neither Ollama nor Docker is installed; local tests use provider and sandbox fakes.
 
 The starter pair generator executes only fixed templates authored by this project. Never use it to execute teacher-generated or other untrusted code; route untrusted snippets through the sandbox.
+
+## Data quality audit
+
+Install the optional TF-IDF dependency with `python -m pip install -e ".[quality]"`. Run `python -m nlpandas.data.quality_checks --input data/processed/pairs.jsonl --output data/processed/curated_pairs.jsonl` to remove exact normalized question/code pairs from training when they collide with validation/test or an optional benchmark, and to write `quality_report.json`. Reuse of a pandas expression with a different question is retained; near matches are flagged for review rather than automatically dropped. Optional benchmark input must be normalized JSONL with string `question` and `code` fields, for example the pandas subset of DS-1000.
 
 ## Quick start
 
@@ -35,7 +40,3 @@ Generated tables, verified pairs, and generation reports are git-ignored under `
 Install local experiment tracking tools with `python -m pip install -e ".[tracking]"` when training and evaluation are ready.
 
 See [the design brief](docs/design.md) for success criteria, scope, and risks.
-=======
-# pandas-pilot
-Fine-tuned Qwen2.5-Coder (QLoRA) that turns questions into sandboxed pandas code. CI-gated, quantized, deployed.
->>>>>>> origin/main
