@@ -1,0 +1,1 @@
+"""Restricted execution for generated pandas code."""

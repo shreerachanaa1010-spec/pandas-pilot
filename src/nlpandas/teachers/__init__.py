@@ -1,0 +1,1 @@
+"""Teacher model adapters for NL-to-pandas example generation."""
